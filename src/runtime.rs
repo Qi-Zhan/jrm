@@ -1,5 +1,8 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{
+    cell::Ref,
+    collections::{HashMap, HashSet},
+};
 
 use crate::{bytecode::ByteCode, class_file::ConstantInfo};
 
@@ -74,8 +77,64 @@ impl Heap {
     }
 
     /// Garbage collection
-    pub fn gc(&mut self) {
-        eprintln!("Garbage collection not implemented but we do not want to panic!")
+    pub fn gc(&mut self, stack: &[Frame], func: &str) {
+        // all references in the world
+        let mut all_reference = HashSet::new();
+        for instance in self.instances.iter().flatten() {
+            all_reference.insert(instance.index);
+        }
+
+        // find all references in the stack
+        for frame in stack {
+            for value in frame.operand_stack.iter() {
+                if let Some(Reference::Object(index)) = value.as_reference() {
+                    let should_keep = self.get_field_ref(index);
+                    for index in should_keep {
+                        all_reference.remove(&index);
+                    }
+                }
+            }
+            for value in frame.locals.iter() {
+                if let Some(Reference::Object(index)) = value.as_reference() {
+                    let should_keep = self.get_field_ref(index);
+                    for index in should_keep {
+                        all_reference.remove(&index);
+                    }
+                }
+            }
+        }
+
+        // remove all instances that are not referenced
+        for non_ref in all_reference.iter() {
+            // use take to let the value be dropped by the compiler
+            self.instances[*non_ref].take();
+        }
+        if !all_reference.is_empty() {
+            println!(
+                "GC: Remove Objects: [{}] after {}",
+                all_reference
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                func
+            );
+        }
+    }
+
+    /// Get all fields that are referenced by the given index
+    fn get_field_ref(&self, index: usize) -> HashSet<usize> {
+        let mut result = HashSet::new();
+        result.insert(index);
+        let instance = self.instances[index].as_ref().unwrap();
+        for (_, value) in instance.fields.iter() {
+            if let Some(Reference::Object(index)) = value.as_reference() {
+                let should_keep = self.get_field_ref(index);
+                result.extend(should_keep);
+                result.insert(index);
+            }
+        }
+        result
     }
 }
 
@@ -125,15 +184,6 @@ pub enum Reference {
     ///
     /// The usize is the index of the instance in the heap
     Object(usize),
-}
-
-impl Reference {
-    pub fn as_object(&self) -> Option<usize> {
-        match self {
-            Reference::Object(index) => Some(*index),
-            _ => None,
-        }
-    }
 }
 
 pub struct Instantce {

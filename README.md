@@ -29,3 +29,11 @@ public class Main {
 ```bash
 cargo run --release -- ./Main.class
 ```
+
+## Very Simple GC
+
+It's a very simple GC which only collect objects which are not referenced by any other objects after each method call.
+
+```bash
+cargo run --release -- ./GC.class
+```

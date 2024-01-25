@@ -66,10 +66,11 @@ fn main() {
     );
     let mut stack = vec![frame];
     let mut current_frame_index = 0;
-    let mut count = 0;
 
     loop {
         let current_frame = &mut stack[current_frame_index];
+        let func = current_frame.name.clone();
+        let mut next_frame_index = current_frame_index;
         let bc = current_frame.fetch();
         match bc {
             ByteCode::Return => {
@@ -77,15 +78,15 @@ fn main() {
                     return;
                 } else {
                     stack.pop();
-                    current_frame_index -= 1;
+                    next_frame_index = current_frame_index - 1;
                 }
             }
             ByteCode::IReturn => {
                 assert_ne!(current_frame_index, 0);
                 let value = current_frame.operand_stack.pop().unwrap();
                 stack.pop();
-                current_frame_index -= 1;
-                let current_frame = &mut stack[current_frame_index];
+                next_frame_index = current_frame_index - 1;
+                let current_frame = &mut stack[next_frame_index];
                 current_frame.operand_stack.push(value);
             }
             ByteCode::IConst(value) => {
@@ -253,7 +254,7 @@ fn main() {
                     frame.locals[args_size - i] = current_frame.operand_stack.pop().unwrap();
                 }
                 stack.push(frame);
-                current_frame_index += 1;
+                next_frame_index = current_frame_index + 1;
             }
             ByteCode::InvokeVirtual(index) => {
                 let (class_name, method_name) =
@@ -287,15 +288,16 @@ fn main() {
                     frame.locals[args_size-i] = current_frame.operand_stack.pop().unwrap();
                 }
                 stack.push(frame);
-                current_frame_index += 1;
+                next_frame_index = current_frame_index + 1;
             }
             _ => {
                 println!("Unimplemented: {:?}", bc);
             }
         }
-        count += 1;
-        if count % 100 == 0 {
-            heap.gc();
+        if next_frame_index < current_frame_index {
+            // garbage collection when returning from a method
+            heap.gc(&stack, &func);
         }
+        current_frame_index = next_frame_index;
     }
 }
